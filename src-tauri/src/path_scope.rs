@@ -4,8 +4,10 @@
 //! Only trusted project roots, the App data root, system temp, and explicitly
 //! granted one-off paths may be read/written.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
 
@@ -112,16 +114,43 @@ fn path_under_root(path: &Path, root: &Path) -> bool {
     true
 }
 
+fn deny_log_throttle() -> &'static RwLock<HashMap<String, Instant>> {
+    static T: OnceLock<RwLock<HashMap<String, Instant>>> = OnceLock::new();
+    T.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
 /// Canonicalize + allowlist gate. Returns the canonical path on success.
 pub fn require_allowed(path: &Path) -> Result<PathBuf, String> {
     let canonical = path
         .canonicalize()
         .map_err(|e| format!("path not found: {e}"))?;
     if !is_allowed_canonical(&canonical) {
-        tracing::warn!(
-            path = %canonical.display(),
-            "path_scope: denied absolute path outside allowlisted roots"
-        );
+        // High-frequency UI previews used to spam one WARN per access (thousands
+        // per session). Rate-limit per path so real denials stay visible.
+        let key = canonical.display().to_string();
+        let now = Instant::now();
+        let should_log = {
+            let mut m = deny_log_throttle().write();
+            const WINDOW: Duration = Duration::from_secs(60);
+            let log = match m.get(&key) {
+                Some(t) if now.duration_since(*t) < WINDOW => false,
+                _ => true,
+            };
+            if log {
+                m.insert(key.clone(), now);
+                // Bound map size for long-running sessions.
+                if m.len() > 128 {
+                    m.retain(|_, t| now.duration_since(*t) < WINDOW);
+                }
+            }
+            log
+        };
+        if should_log {
+            tracing::warn!(
+                path = %canonical.display(),
+                "path_scope: denied absolute path outside allowlisted roots"
+            );
+        }
         return Err("path not allowed: outside trusted project or app data roots".into());
     }
     Ok(canonical)

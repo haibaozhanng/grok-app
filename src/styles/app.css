@@ -8049,8 +8049,50 @@ button.composer__context-item {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary);
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px;
 }
 
+.composer__queue-text:hover:not(:disabled) {
+  color: var(--accent, var(--text-primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.composer__queue-text:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.composer__queue-edit {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.composer__queue-edit:hover:not(:disabled) {
+  background: var(--bg-elevated, var(--bg-hover));
+  color: var(--accent, var(--text-primary));
+}
+
+.composer__queue-edit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 
 .composer__queue-guide {
   flex: 0 0 auto;

@@ -373,6 +373,7 @@ import {
   IconArrowsVerticalCollapse,
   IconClock,
   IconClose,
+  IconEdit,
   IconNewChat as IconSquarePen,
   IconNewChat,
   IconImagine,
@@ -6926,6 +6927,31 @@ export default function App() {
       ? liveHost.state === "streaming"
       : session.state === "streaming");
 
+  /**
+   * Edit a pending queue/steer prompt: load into composer and remove from the
+   * queue so the user can change text and send (or re-queue) again.
+   */
+  const editQueuedMessage = useCallback(
+    (item: QueuedSend) => {
+      if (guidingQueueItemId === item.id) return;
+      const taken = sendQueue.takeItemForEdit(item.id);
+      if (!taken) return;
+      setDraft(taken.storedDisplay);
+      setAttachments(taken.attachments.map((a) => ({ ...a })));
+      setGoalMode(taken.goalMode);
+      // Focus composer so typing continues naturally.
+      window.setTimeout(() => {
+        try {
+          document.querySelector<HTMLElement>(".composer__input")?.focus();
+        } catch {
+          /* ignore */
+        }
+      }, 0);
+      showToast(tr("composer.queueEditLoaded"), 2200);
+    },
+    [guidingQueueItemId, sendQueue, showToast, tr],
+  );
+
   const guideQueuedMessage = useCallback(
     async (item: QueuedSend) => {
       if (guidingQueueItemId || !canGuideQueuedMessage || !session.sessionId) {
@@ -11716,14 +11742,22 @@ export default function App() {
                         <span className="composer__queue-idx" aria-hidden>
                           {idx + 1}
                         </span>
-                        <span
+                        <button
+                          type="button"
                           className="composer__queue-text"
-                          title={queuePreviewText(
-                            item.storedDisplay,
-                            item.attachments,
-                            200,
-                            queuePreviewLabels,
-                          )}
+                          title={
+                            queuePreviewText(
+                              item.storedDisplay,
+                              item.attachments,
+                              200,
+                              queuePreviewLabels,
+                            ) +
+                            " — " +
+                            tr("composer.queueEdit")
+                          }
+                          aria-label={tr("composer.queueEdit")}
+                          disabled={guidingQueueItemId === item.id}
+                          onClick={() => editQueuedMessage(item)}
                         >
                           {queuePreviewText(
                             item.storedDisplay,
@@ -11731,7 +11765,18 @@ export default function App() {
                             72,
                             queuePreviewLabels,
                           )}
-                        </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="composer__queue-edit"
+                          data-testid="queue-edit"
+                          aria-label={tr("composer.queueEdit")}
+                          title={tr("composer.queueEdit")}
+                          disabled={guidingQueueItemId === item.id}
+                          onClick={() => editQueuedMessage(item)}
+                        >
+                          <IconEdit size={12} />
+                        </button>
                         <button
                           type="button"
                           className="composer__queue-guide"

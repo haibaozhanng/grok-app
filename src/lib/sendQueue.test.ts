@@ -17,6 +17,7 @@ import {
   setQueueForKey,
   shouldEnqueueSend,
   shouldHoldFlushForLive,
+  updateQueuedSend,
   SEND_QUEUE_MAX,
 } from "./sendQueue";
 
@@ -60,6 +61,29 @@ describe("sendQueue", () => {
     // Live idle → never hold
     expect(shouldHoldFlushForLive("a", "ready", "a")).toBe(false);
     expect(shouldHoldFlushForLive(null, "streaming", "a")).toBe(false);
+  });
+
+  it("updateQueuedSend patches text in place", () => {
+    const a = makeQueuedSend({
+      storedDisplay: "hello",
+      attachments: [],
+      goalMode: false,
+      now: 1,
+    });
+    const b = makeQueuedSend({
+      storedDisplay: "other",
+      attachments: [],
+      goalMode: true,
+      now: 2,
+    });
+    const q = updateQueuedSend([a, b], a.id, { storedDisplay: "edited" });
+    expect(q).toHaveLength(2);
+    expect(q[0]!.storedDisplay).toBe("edited");
+    expect(q[0]!.id).toBe(a.id);
+    expect(q[1]!.storedDisplay).toBe("other");
+    // Missing id → same array reference
+    const same = updateQueuedSend(q, "nope", { storedDisplay: "x" });
+    expect(same).toBe(q);
   });
 
   it("enqueue drops oldest past max and reports dropped", () => {

@@ -468,6 +468,8 @@ export const zhTW: Record<MessageKey, string> = {
   "composer.queueHoldRetry": "重試",
   "composer.queueClear": "清空",
   "composer.queueRemove": "從佇列移除",
+  "composer.queueEdit": "編輯待發提示詞",
+  "composer.queueEditLoaded": "已載入輸入框 — 修改後再次傳送",
   "composer.queueEmptyPreview": "（附件）",
   "composer.queueFilesCount": "{n} 個檔案",
   "composer.stop": "停止",

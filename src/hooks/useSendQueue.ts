@@ -23,6 +23,7 @@ import {
   setQueueForKey,
   shouldEnqueueSend,
   shouldHoldFlushForLive,
+  updateQueuedSend,
   type QueuedSend,
 } from "@/lib/sendQueue";
 
@@ -141,6 +142,53 @@ export function useSendQueue({
       if (!getQueueForKey(next, key).length) cancelFlushTimer();
     },
     [sessionId, writeMap, cancelFlushTimer],
+  );
+
+  /** Edit a queued item in place (text / attachments / goal). */
+  const updateItem = useCallback(
+    (
+      id: string,
+      patch: {
+        storedDisplay?: string;
+        attachments?: Attachment[];
+        goalMode?: boolean;
+      },
+    ) => {
+      const key = queueSessionKey(
+        viewingSessionIdRef.current ?? sessionId,
+      );
+      const cur = getQueueForKey(sendQueueByKeyRef.current, key);
+      const updated = updateQueuedSend(cur, id, patch);
+      if (updated === cur) return false;
+      writeMap(setQueueForKey(sendQueueByKeyRef.current, key, updated));
+      return true;
+    },
+    [sessionId, viewingSessionIdRef, writeMap],
+  );
+
+  /**
+   * Pull a queue item into the composer for editing: returns the item and
+   * removes it from the queue so the user can change the prompt and re-send
+   * (or re-queue while still busy).
+   */
+  const takeItemForEdit = useCallback(
+    (id: string): QueuedSend | null => {
+      const key = queueSessionKey(
+        viewingSessionIdRef.current ?? sessionId,
+      );
+      const cur = getQueueForKey(sendQueueByKeyRef.current, key);
+      const item = cur.find((q) => q.id === id) ?? null;
+      if (!item) return null;
+      const next = setQueueForKey(
+        sendQueueByKeyRef.current,
+        key,
+        removeQueuedSend(cur, id),
+      );
+      writeMap(next);
+      if (!getQueueForKey(next, key).length) cancelFlushTimer();
+      return item;
+    },
+    [sessionId, viewingSessionIdRef, writeMap, cancelFlushTimer],
   );
 
   const clearQueue = useCallback(() => {
@@ -284,6 +332,8 @@ export function useSendQueue({
     flushHold,
     enqueue,
     removeItem,
+    updateItem,
+    takeItemForEdit,
     clearQueue,
     clearDraftQueue,
     dropSessions,

@@ -152,6 +152,40 @@ export function removeQueuedSend(
   return queue.filter((q) => q.id !== id);
 }
 
+/**
+ * Update a still-queued follow-up in place (edit before auto-send / steer).
+ * Returns the new queue, or the same array if `id` is missing.
+ */
+export function updateQueuedSend(
+  queue: QueuedSend[],
+  id: string,
+  patch: {
+    storedDisplay?: string;
+    attachments?: Attachment[];
+    goalMode?: boolean;
+  },
+): QueuedSend[] {
+  let changed = false;
+  const next = queue.map((q) => {
+    if (q.id !== id) return q;
+    changed = true;
+    return {
+      ...q,
+      storedDisplay:
+        patch.storedDisplay !== undefined
+          ? patch.storedDisplay
+          : q.storedDisplay,
+      attachments:
+        patch.attachments !== undefined
+          ? patch.attachments.map((a) => ({ ...a }))
+          : q.attachments,
+      goalMode:
+        patch.goalMode !== undefined ? patch.goalMode : q.goalMode,
+    };
+  });
+  return changed ? next : queue;
+}
+
 /** Pop head; returns [head | null, rest]. */
 export function dequeueSend(
   queue: QueuedSend[],

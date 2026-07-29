@@ -2637,6 +2637,11 @@ impl SessionManager {
         };
         let project_path = Some(cwd.to_string_lossy().to_string());
 
+        // Host absolute FS (media / fs_read_absolute) only allows trusted project
+        // roots + app data. Always grant this session's cwd so agent-produced
+        // absolute paths under the worktree can be previewed without path_scope spam.
+        crate::path_scope::grant_path(&cwd);
+
         tracing::info!(
             target: "session",
             session = %meta.id,
