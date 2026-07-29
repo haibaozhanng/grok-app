@@ -862,8 +862,22 @@ html.platform-mac[data-theme="light"] .settings-page__content {
   color: var(--accent, var(--text-secondary));
 }
 
+/* Unread: finished while away — solid accent dot (replaces spinner). */
+.tree-l3__unread-dot {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #3b82f6);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #3b82f6) 22%, transparent);
+}
+
 .tree-l3--working .tree-l3__title {
   color: var(--text-primary);
+}
+
+.tree-l3--unread .tree-l3__name {
+  font-weight: 600;
 }
 
 .tree-check {

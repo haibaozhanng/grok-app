@@ -33,6 +33,7 @@ export const zhTW: Record<MessageKey, string> = {
   "sidebar.unarchive": "取消封存",
   "sidebar.showArchived": "顯示已封存",
   "sidebar.sessionWorking": "進行中…",
+  "sidebar.sessionUnread": "回合已完成 — 點開查看",
   "user.menu": "個人中心",
   "user.theme": "主題",
   "user.themeLight": "切換為淺色",
@@ -106,6 +107,7 @@ export const zhTW: Record<MessageKey, string> = {
     "Agent 提問已逾時（{seconds}s）— 已取消本輪，避免對話卡住。",
   "session.stopAlreadyIdle":
     "此對話沒有存活的 Agent 進程 — 已清除忙碌狀態。",
+  "session.otherTurnDone": "「{title}」已完成一輪",
   "session.rewind": "回退時間線",
   "session.rewindTitle": "回退對話",
   "session.rewindHint":

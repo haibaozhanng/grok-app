@@ -169,6 +169,15 @@ import {
   settleStoppedSessionSnapshot,
   type SessionLiveMap,
 } from "@/lib/sessionLiveStore";
+import {
+  clearUnread,
+  isUnread,
+  markUnread,
+  shouldMarkUnreadOnSettle,
+  wasBusyInLiveMap,
+  type UnreadMap,
+} from "@/lib/sessionUnread";
+import { playCompletionChime } from "@/lib/completionChime";
 import { endOfTurnMarkerContent } from "@/lib/endOfTurn";
 import {
   stallMessageKey,
@@ -647,6 +656,17 @@ export default function App() {
   /** Latest live map for callbacks that must not close over a stale render. */
   const liveMapRef = useRef(liveMap);
   liveMapRef.current = liveMap;
+  /**
+   * Sidebar unread dots: turn finished while the user was on another chat.
+   * Cleared when that session is opened. Complements desktop notify + chime.
+   */
+  const [unreadMap, setUnreadMap] = useState<UnreadMap>({});
+  const unreadMapRef = useRef(unreadMap);
+  unreadMapRef.current = unreadMap;
+  /** Stable for mount-only ACP listeners (must not close over late useCallbacks). */
+  const noteOtherSessionTurnDoneRef = useRef<(sessionId: string) => void>(
+    () => {},
+  );
   /** Stop interrupt honesty latch (force unlock after budget). */
   const [stopLatch, setStopLatch] = useState<StopLatchState>(() =>
     createStopLatchState(),
@@ -774,6 +794,8 @@ export default function App() {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   /**
    * On-disk default cwd for unbound chats (`workspaces/general`).
@@ -2368,6 +2390,22 @@ export default function App() {
             if (cancelled) return;
             // Host focus slot (the process under the live cursor). Multi-session
             // busy demotions also emit session://runtime so liveMap stays honest.
+            if (s.sessionId) {
+              const wasBusy = wasBusyInLiveMap(
+                liveMapRef.current,
+                s.sessionId,
+              );
+              if (
+                shouldMarkUnreadOnSettle({
+                  sessionId: s.sessionId,
+                  nextState: s.state,
+                  wasBusy,
+                  viewingSessionId: viewingSessionIdRef.current,
+                })
+              ) {
+                noteOtherSessionTurnDoneRef.current(s.sessionId);
+              }
+            }
             setLiveHost(s);
             liveHostRef.current = s;
             setLiveMap((prev) =>
@@ -2481,6 +2519,17 @@ export default function App() {
         await track(
           api.listen<SessionSnapshot>("session://runtime", (s) => {
             if (cancelled || !s.sessionId) return;
+            const wasBusy = wasBusyInLiveMap(liveMapRef.current, s.sessionId);
+            if (
+              shouldMarkUnreadOnSettle({
+                sessionId: s.sessionId,
+                nextState: s.state,
+                wasBusy,
+                viewingSessionId: viewingSessionIdRef.current,
+              })
+            ) {
+              noteOtherSessionTurnDoneRef.current(s.sessionId);
+            }
             setLiveMap((prev) =>
               projectHostIntoLiveMap(prev, {
                 sessionId: s.sessionId,
@@ -2550,6 +2599,20 @@ export default function App() {
             );
           }
           if (chunk.done && chunk.sessionId) {
+            const wasBusy = wasBusyInLiveMap(
+              liveMapRef.current,
+              chunk.sessionId,
+            );
+            if (
+              shouldMarkUnreadOnSettle({
+                sessionId: chunk.sessionId,
+                nextState: "ready",
+                wasBusy,
+                viewingSessionId: viewingSessionIdRef.current,
+              })
+            ) {
+              noteOtherSessionTurnDoneRef.current(chunk.sessionId);
+            }
             setLiveMap((prev) =>
               projectHostIntoLiveMap(prev, {
                 sessionId: chunk.sessionId!,
@@ -3474,6 +3537,8 @@ export default function App() {
     // Point viewing id immediately so late stream chunks land in the right cache.
     openingSessionIdRef.current = s.id;
     viewingSessionIdRef.current = s.id;
+    // Opening a chat clears its unread dot (IM-style).
+    setUnreadMap((m) => clearUnread(m, s.id));
     // Swap plan chrome to this session (or hide if none / not yet streamed).
     setPlan(
       planBySessionRef.current.get(s.id) ??
@@ -4153,6 +4218,38 @@ export default function App() {
     });
     setSession((prev) => settleStoppedSessionSnapshot(prev, sessionId));
   }, []);
+
+  /**
+   * Other chat finished while the user is elsewhere: unread dot + toast + chime
+   * (+ force desktop notify so it works even with the window focused).
+   * Kept on a ref so mount-only ACP listeners always call the latest body.
+   */
+  const noteOtherSessionTurnDone = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    if (sessionId === viewingSessionIdRef.current) {
+      setUnreadMap((m) => clearUnread(m, sessionId));
+      return;
+    }
+    // Dedupe rapid double emits (state + runtime + stream done).
+    if (isUnread(unreadMapRef.current, sessionId)) return;
+    setUnreadMap((m) => markUnread(m, sessionId));
+    const title =
+      sessionsRef.current.find((x) => x.id === sessionId)?.title?.trim() ||
+      trRef.current("session.untitled");
+    setToast(trRef.current("session.otherTurnDone", { title }));
+    window.setTimeout(() => setToast(null), 4800);
+    playCompletionChime();
+    if (shouldShowDesktopNotify("turn_done", notifyPrefsRef.current)) {
+      showDesktopNotification({
+        title: trRef.current("notify.turnDoneTitle"),
+        body: trRef.current("session.otherTurnDone", { title }),
+        tag: `turn-${sessionId}`,
+        force: true,
+      });
+    }
+  }, []);
+  noteOtherSessionTurnDoneRef.current = noteOtherSessionTurnDone;
+
   const stopGate = useMemo(
     () =>
       reconcileUiBusyGate({
@@ -10300,6 +10397,8 @@ export default function App() {
                             }
                             renderItem={(s) => {
                               const working = busyIds.has(s.id);
+                              const unread =
+                                !working && isUnread(unreadMap, s.id);
                               return (
                                 <div
                                   className={
@@ -10308,7 +10407,8 @@ export default function App() {
                                       ? " tree-l3--active"
                                       : "") +
                                     (s.archived ? " tree-l3--archived" : "") +
-                                    (working ? " tree-l3--working" : "")
+                                    (working ? " tree-l3--working" : "") +
+                                    (unread ? " tree-l3--unread" : "")
                                   }
                                   role="button"
                                   tabIndex={0}
@@ -10356,6 +10456,18 @@ export default function App() {
                                         <Spinner
                                           size={14}
                                           className="tree-l3__spinner"
+                                        />
+                                      </span>
+                                    </Tip>
+                                  ) : unread ? (
+                                    <Tip label={tr("sidebar.sessionUnread")}>
+                                      <span
+                                        className="tree-l3__status"
+                                        aria-label={tr("sidebar.sessionUnread")}
+                                      >
+                                        <span
+                                          className="tree-l3__unread-dot"
+                                          aria-hidden
                                         />
                                       </span>
                                     </Tip>
@@ -10465,6 +10577,7 @@ export default function App() {
                 }
                 renderItem={(s) => {
                   const working = busyIds.has(s.id);
+                  const unread = !working && isUnread(unreadMap, s.id);
                   return (
                     <div
                       className={
@@ -10472,7 +10585,8 @@ export default function App() {
                         (session.sessionId === s.id
                           ? " tree-l3--active"
                           : "") +
-                        (working ? " tree-l3--working" : "")
+                        (working ? " tree-l3--working" : "") +
+                        (unread ? " tree-l3--unread" : "")
                       }
                       role="button"
                       tabIndex={0}
@@ -10517,6 +10631,18 @@ export default function App() {
                             <Spinner
                               size={14}
                               className="tree-l3__spinner"
+                            />
+                          </span>
+                        </Tip>
+                      ) : unread ? (
+                        <Tip label={tr("sidebar.sessionUnread")}>
+                          <span
+                            className="tree-l3__status"
+                            aria-label={tr("sidebar.sessionUnread")}
+                          >
+                            <span
+                              className="tree-l3__unread-dot"
+                              aria-hidden
                             />
                           </span>
                         </Tip>

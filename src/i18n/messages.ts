@@ -41,6 +41,7 @@ const en = {
   "sidebar.unarchive": "Unarchive",
   "sidebar.showArchived": "Show archived",
   "sidebar.sessionWorking": "Working…",
+  "sidebar.sessionUnread": "Turn finished — open to read",
   "user.menu": "Account menu",
   "user.theme": "Theme",
   "user.themeLight": "Switch to light",
@@ -117,6 +118,7 @@ const en = {
     "Agent question timed out after {seconds}s — the turn was cancelled so the session does not freeze.",
   "session.stopAlreadyIdle":
     "No live agent process for this chat — cleared the busy state.",
+  "session.otherTurnDone": "“{title}” finished a turn",
   "session.rewind": "Rewind timeline",
   "session.rewindTitle": "Rewind conversation",
   "session.rewindHint":
@@ -2270,6 +2272,7 @@ const zh: Record<MessageKey, string> = {
   "sidebar.unarchive": "取消归档",
   "sidebar.showArchived": "显示已归档",
   "sidebar.sessionWorking": "进行中…",
+  "sidebar.sessionUnread": "回合已完成 — 点开查看",
   "user.menu": "个人中心",
   "user.theme": "主题",
   "user.themeLight": "切换到浅色",
@@ -2342,6 +2345,7 @@ const zh: Record<MessageKey, string> = {
     "Agent 提问已超时（{seconds}s）— 已取消本轮，避免会话卡死。",
   "session.stopAlreadyIdle":
     "此会话没有存活的 Agent 进程 — 已清除忙碌状态。",
+  "session.otherTurnDone": "「{title}」已完成一轮",
   "session.forkFailed": "分叉会话失败",
   "session.rewind": "回退时间线",
   "session.rewindTitle": "回退对话",
