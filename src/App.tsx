@@ -3070,7 +3070,13 @@ export default function App() {
         await track(
           api.listen<AskUserPayload>("session://ask_user", (p) => {
             if (cancelled) return;
-            if (!p?.rpcId || !Array.isArray(p.questions) || !p.questions.length) {
+            // rpcId can be 0 on the first reverse-RPC — never use truthiness.
+            if (
+              p == null ||
+              typeof p.rpcId !== "number" ||
+              !Array.isArray(p.questions) ||
+              !p.questions.length
+            ) {
               return;
             }
             if (p.sessionId) {
