@@ -5799,8 +5799,16 @@ impl SessionManager {
                 (s.acp.clone(), id)
             })
             .ok_or("no session")?;
-        let id = id.ok_or_else(|| "no pending ask_user_question".to_string())?;
-        let acp = acp.ok_or_else(|| "ACP client missing".to_string())?;
+        // Idempotent dismiss: UI may close optimistically then call again.
+        let Some(id) = id else {
+            tracing::info!("resolve_ask_user: no pending (already resolved) sid={target}");
+            self.emit_for_session(&app, &target);
+            return Ok(self.snapshot());
+        };
+        let Some(acp) = acp else {
+            self.emit_for_session(&app, &target);
+            return Err("ACP client missing".to_string());
+        };
         let outcome = match decision.as_str() {
             "accepted" | "answered" | "accept" => {
                 let answers = answers.unwrap_or_else(|| serde_json::json!({}));
@@ -5808,7 +5816,16 @@ impl SessionManager {
             }
             _ => AskUserOutcome::Cancelled,
         };
-        acp.respond_ask_user_question(id, outcome).await?;
+        if let Err(e) = acp.respond_ask_user_question(id, outcome).await {
+            // Still emit so UI leaves AwaitingPermission projection.
+            tracing::warn!("resolve_ask_user reply failed id={id}: {e}");
+            self.emit_for_session(&app, &target);
+            // Cancel/dismiss should not hard-fail the UI path.
+            if decision != "accepted" && decision != "answered" && decision != "accept" {
+                return Ok(self.snapshot());
+            }
+            return Err(e);
+        }
         let empty_run = self
             .with_session_mut(&target, |s| {
                 Self::try_finish_deferred_prompt_complete(s).flatten()

@@ -114,8 +114,20 @@ export function AskUserModal({ payload, labels, onSubmit, onCancel }: Props) {
     }
   };
 
+  /**
+   * Dismiss must never soft-lock the dialog. Parent handlers close optimistically;
+   * if a previous resolve is still in flight (`busy`), still call onCancel again
+   * so the UI can drop the payload instead of ignoring the second click.
+   */
   const cancel = async () => {
-    if (busy) return;
+    if (busy) {
+      try {
+        await onCancel();
+      } catch {
+        /* parent still hides */
+      }
+      return;
+    }
     setBusy(true);
     try {
       await onCancel();

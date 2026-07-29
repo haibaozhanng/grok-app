@@ -13031,33 +13031,37 @@ export default function App() {
           close: tr("common.close"),
         }}
         onSubmit={async (answers) => {
-          if (!askUser) return;
+          const cur = askUser;
+          if (!cur) return;
+          // Close first so a slow ACP reply cannot pin the modal open.
+          clearPendingGates(cur.sessionId);
+          setAskUser(null);
           try {
             await api.sessionResolveAskUser({
               decision: "accepted",
               answers,
-              rpcId: askUser.rpcId,
-              sessionId: askUser.sessionId,
+              rpcId: cur.rpcId,
+              sessionId: cur.sessionId,
             });
-            clearPendingGates(askUser.sessionId);
-            setAskUser(null);
           } catch (e) {
             showToast(String(e), 4500);
           }
         }}
         onCancel={async () => {
-          if (!askUser) return;
+          const cur = askUser;
+          // Always drop UI first (Dismiss / X / Esc). Host resolve is best-effort.
+          setAskUser(null);
+          if (!cur) return;
+          clearPendingGates(cur.sessionId);
           try {
             await api.sessionResolveAskUser({
               decision: "cancelled",
-              rpcId: askUser.rpcId,
-              sessionId: askUser.sessionId,
+              rpcId: cur.rpcId,
+              sessionId: cur.sessionId,
             });
           } catch {
-            /* still hide UI */
+            /* UI already closed — turn may need Stop if Host still gated */
           }
-          clearPendingGates(askUser.sessionId);
-          setAskUser(null);
         }}
       />
       <StatusModal
