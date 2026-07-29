@@ -103,12 +103,20 @@ pub fn run() {
         builder
     }
 
-    let builder = tauri::Builder::default()
-        // Must be registered first so a second process exits and focuses the primary window.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+    // Single-instance: release only. Debug (`pnpm dev`) must be able to run
+    // alongside the installed `/Applications/Grok.app` (same identifier would
+    // otherwise steal focus and exit the second process).
+    let builder = {
+        let b = tauri::Builder::default();
+        #[cfg(not(debug_assertions))]
+        let b = b.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             // Same restore path as tray Open — taskbar + shell styles included.
             tray::show_main_window(app);
-        }))
+        }));
+        #[cfg(debug_assertions)]
+        let b = b;
+        b
+    }
         .plugin(tauri_plugin_store::Builder::new().build())
         // Always register process so release builds can relaunch after install.
         .plugin(tauri_plugin_process::init());
@@ -146,6 +154,11 @@ pub fn run() {
             crate::path_scope::refresh_from_store();
             use tauri::Manager;
             if let Some(window) = app.get_webview_window("main") {
+                // Distinguish dev window from installed `/Applications/Grok.app`.
+                #[cfg(debug_assertions)]
+                {
+                    let _ = window.set_title("Grok Dev");
+                }
                 #[cfg(target_os = "macos")]
                 {
                     // Transparent layers so CSS backdrop-filter / native vibrancy show through.
