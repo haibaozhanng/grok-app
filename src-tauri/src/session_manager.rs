@@ -28,9 +28,13 @@ use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
 use crate::acp_client::{
-    should_abort_provider_retry, AcpClient, AcpEvent, AskUserOutcome, PermissionOutcome,
-    StreamKind, HOST_PROVIDER_MAX_RETRIES,
+    should_abort_provider_retry, AcpClient, AcpEvent, AskUserOutcome, AskUserQuestionItem,
+    PermissionOutcome, StreamKind, HOST_PROVIDER_MAX_RETRIES,
 };
+
+/// Auto-cancel `_x.ai/ask_user_question` if the UI never answers (seconds).
+/// Prevents the agent turn from hanging forever (and cascading "connecting" freezes).
+const ASK_USER_TIMEOUT_SECS: u64 = 120;
 use crate::cli_probe;
 use crate::error::{AgentError, AgentErrorCode};
 use crate::journal_throttle::{is_paragraph_break, JournalWriteThrottle};
@@ -1970,6 +1974,152 @@ impl SessionManager {
         bg.get_mut(app_session_id).map(f)
     }
 
+    /// Surface `_x.ai/ask_user_question` to the UI and arm a host-side timeout.
+    ///
+    /// Works for the live focus slot **or** a demoted background turn. Without
+    /// the background path, switching chats mid-turn dropped the reverse-RPC
+    /// and the agent hung until process death / app restart.
+    fn surface_ask_user_question(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        app_session_id: &str,
+        rpc_id: u64,
+        tool_call_id: Option<String>,
+        questions: Vec<AskUserQuestionItem>,
+    ) {
+        let accepted = self
+            .with_session_mut(app_session_id, |s| {
+                if Self::is_session_load_replay(s.prompt_in_flight) {
+                    tracing::debug!(
+                        "acp ask_user dropped: no prompt in flight (replay) sid={app_session_id}"
+                    );
+                    return false;
+                }
+                s.pending_ask_user_rpc_id = Some(rpc_id);
+                // Mark waiting so stop / stall / defer treat the turn as busy.
+                if s.fsm.state() == SessionState::Streaming {
+                    let _ = s.fsm.await_permission();
+                }
+                Self::touch_activity_locked(s);
+                true
+            })
+            .unwrap_or(false);
+
+        if !accepted {
+            tracing::warn!(
+                "acp ask_user not attached sid={app_session_id} id={rpc_id} — agent may hang until cancel"
+            );
+            return;
+        }
+
+        tracing::info!(
+            "acp ask_user surface sid={app_session_id} id={rpc_id} questions={}",
+            questions.len()
+        );
+        let _ = app.emit(
+            "session://ask_user",
+            serde_json::json!({
+                "rpcId": rpc_id,
+                "sessionId": app_session_id,
+                "toolCallId": tool_call_id,
+                "questions": questions,
+            }),
+        );
+        // Keep multi-session liveMap honest for demoted turns.
+        self.emit_for_session(app, app_session_id);
+        self.schedule_ask_user_timeout(app.clone(), app_session_id.to_string(), rpc_id);
+    }
+
+    fn schedule_ask_user_timeout(
+        self: &Arc<Self>,
+        app: AppHandle,
+        app_session_id: String,
+        rpc_id: u64,
+    ) {
+        let mgr = Arc::clone(self);
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(ASK_USER_TIMEOUT_SECS)).await;
+            mgr.timeout_pending_ask_user(app, &app_session_id, rpc_id)
+                .await;
+        });
+    }
+
+    /// If the same ask_user RPC is still pending after the timeout, cancel it
+    /// so the agent turn can finish (or fail cleanly) instead of freezing the UI.
+    async fn timeout_pending_ask_user(
+        self: &Arc<Self>,
+        app: AppHandle,
+        app_session_id: &str,
+        rpc_id: u64,
+    ) {
+        let acp = self
+            .with_session_mut(app_session_id, |s| {
+                if s.pending_ask_user_rpc_id != Some(rpc_id) {
+                    return None;
+                }
+                s.pending_ask_user_rpc_id = None;
+                if s.fsm.state() == SessionState::AwaitingPermission {
+                    let _ = s.fsm.permission_resolved_continue();
+                }
+                s.acp.clone()
+            })
+            .flatten();
+
+        let Some(acp) = acp else {
+            return;
+        };
+
+        tracing::warn!(
+            "ask_user timeout after {ASK_USER_TIMEOUT_SECS}s sid={app_session_id} id={rpc_id} — auto-cancel"
+        );
+        if let Err(e) = acp
+            .respond_ask_user_question(rpc_id, AskUserOutcome::Cancelled)
+            .await
+        {
+            tracing::warn!("ask_user timeout cancel reply failed: {e}");
+        }
+
+        let empty_run = self
+            .with_session_mut(app_session_id, |s| {
+                Self::try_finish_deferred_prompt_complete(s).flatten()
+            })
+            .flatten();
+        Self::emit_empty_run_if_any(&app, empty_run);
+        self.promote_background_ready_to_parked(app_session_id);
+        self.emit_for_session(&app, app_session_id);
+        let _ = app.emit(
+            "session://ask_user_timeout",
+            serde_json::json!({
+                "sessionId": app_session_id,
+                "rpcId": rpc_id,
+                "seconds": ASK_USER_TIMEOUT_SECS,
+            }),
+        );
+    }
+
+    /// Force UI/runtime projection to Ready when Host has no process for a chat
+    /// (zombie stop / ghost busy after process death).
+    fn emit_force_ready_for_session(&self, app: &AppHandle, app_session_id: &str) {
+        let snap = SessionSnapshot {
+            session_id: Some(app_session_id.to_string()),
+            agent_session_id: None,
+            state: SessionState::Ready,
+            last_error: None,
+            streaming_message_id: None,
+            backend: Self::backend_name(),
+            model_id: None,
+            project_path: None,
+            title: String::new(),
+        };
+        Self::emit_runtime(app, &snap);
+        if self.is_live_session(app_session_id) {
+            Self::emit_state(app, &self.snapshot());
+        } else {
+            // Still refresh focused slot projection for other chats.
+            Self::emit_state(app, &self.snapshot());
+        }
+    }
+
     /// True when `app_session_id` currently owns the live focus slot.
     fn is_live_session(&self, app_session_id: &str) -> bool {
         self.inner
@@ -3609,29 +3759,20 @@ impl SessionManager {
                 questions,
                 raw: _,
             } => {
-                let app_sid = {
-                    let mut guard = self.inner.lock();
-                    if let Some(s) = guard.as_mut() {
-                        if Self::is_session_load_replay(s.prompt_in_flight) {
-                            tracing::debug!(
-                                "acp ask_user dropped: no prompt in flight (replay)"
-                            );
-                            return;
-                        }
-                        s.pending_ask_user_rpc_id = Some(rpc_id);
-                        s.app_session_id.clone()
-                    } else {
-                        return;
-                    }
+                let app_sid = self
+                    .inner
+                    .lock()
+                    .as_ref()
+                    .map(|s| s.app_session_id.clone());
+                let Some(app_sid) = app_sid else {
+                    return;
                 };
-                let _ = app.emit(
-                    "session://ask_user",
-                    serde_json::json!({
-                        "rpcId": rpc_id,
-                        "sessionId": app_sid,
-                        "toolCallId": tool_call_id,
-                        "questions": questions,
-                    }),
+                self.surface_ask_user_question(
+                    app,
+                    &app_sid,
+                    rpc_id,
+                    tool_call_id,
+                    questions,
                 );
             }
             AcpEvent::Error { error } => {
@@ -4398,8 +4539,57 @@ impl SessionManager {
                     }),
                 );
             }
+            AcpEvent::AskUserQuestion {
+                rpc_id,
+                tool_call_id,
+                questions,
+                raw: _,
+            } => {
+                // Previously ignored — demoting a busy chat mid-turn then hung the
+                // agent forever because the reverse-RPC never reached the UI.
+                self.surface_ask_user_question(
+                    app,
+                    app_session_id,
+                    rpc_id,
+                    tool_call_id,
+                    questions,
+                );
+            }
+            AcpEvent::Plan {
+                entries,
+                body,
+                rpc_id,
+                tool_call_id,
+            } => {
+                let ok = self
+                    .with_session_mut(app_session_id, |s| {
+                        if Self::is_session_load_replay(s.prompt_in_flight) {
+                            return false;
+                        }
+                        if let Some(id) = rpc_id {
+                            s.pending_plan_rpc_id.replace(id);
+                        }
+                        true
+                    })
+                    .unwrap_or(false);
+                if !ok {
+                    return;
+                }
+                let _ = app.emit(
+                    "session://plan",
+                    serde_json::json!({
+                        "sessionId": app_session_id,
+                        "entries": entries,
+                        "body": body,
+                        "rpcId": rpc_id,
+                        "toolCallId": tool_call_id,
+                        "waiting": rpc_id.is_none(),
+                    }),
+                );
+                self.emit_for_session(app, app_session_id);
+            }
             _ => {
-                // ask_user / plan / stderr / retry — still forward with session id when possible
+                // stderr / retry — optional forward later
                 tracing::debug!("background acp event ignored variant for sid={app_session_id}");
             }
         }
@@ -5004,8 +5194,8 @@ impl SessionManager {
         session_id: Option<String>,
     ) -> Result<SessionSnapshot, String> {
         let target = match session_id {
-            Some(sid) => sid,
-            None => self
+            Some(sid) if !sid.is_empty() => sid,
+            _ => self
                 .inner
                 .lock()
                 .as_ref()
@@ -5013,16 +5203,20 @@ impl SessionManager {
                 .ok_or("no active session")?,
         };
         let app_for_marker = app.clone();
-        let acp = self
-            .with_session_mut(&target, move |s| {
+        let Some((acp, pending_ask, pending_plan)) = self.with_session_mut(&target, move |s| {
                 let app = app_for_marker;
                 if let Some(h) = s.mock_stream.take() {
                     h.request_stop();
                 }
+                let pending_ask = s.pending_ask_user_rpc_id.take();
+                let pending_plan = s.pending_plan_rpc_id.take();
                 let was_busy = s.fsm.state() == SessionState::Streaming
                     || s.fsm.state() == SessionState::AwaitingPermission
                     || s.streaming_message_id.is_some()
-                    || !s.open_tool_ids.is_empty();
+                    || !s.open_tool_ids.is_empty()
+                    || pending_ask.is_some()
+                    || pending_plan.is_some()
+                    || s.prompt_in_flight;
                 let partial = s.stream_buf.trim().to_string();
                 // Journal a cancel marker so UI history is not left as user-only silence.
                 if was_busy {
@@ -5082,10 +5276,45 @@ impl SessionManager {
                 s.prompt_in_flight = false;
                 s.journal_throttle.reset();
                 s.last_stall_emit = None;
-                s.acp.clone()
+                (s.acp.clone(), pending_ask, pending_plan)
             })
-            .ok_or("no active session")?;
-        if let Some(acp) = acp {
+        else {
+            // Parked = already idle Ready. Ghost busy UI (process gone) used to
+            // error with "no active session" and leave the red Stop button stuck.
+            if self.parked.lock().contains_key(&target) {
+                tracing::info!("stop: session already parked (idle) sid={target}");
+            } else {
+                tracing::warn!(
+                    "stop: no attached process for sid={target}; force UI ready (was: no active session)"
+                );
+            }
+            let mid = Uuid::new_v4().to_string();
+            let content = "turn_cancelled|user_stop|no_process".to_string();
+            let _ = app.emit(
+                "session://turn_marker",
+                serde_json::json!({
+                    "sessionId": target,
+                    "messageId": mid,
+                    "marker": "turn_cancelled",
+                    "reason": "user_stop",
+                    "content": content,
+                }),
+            );
+            self.emit_force_ready_for_session(&app, &target);
+            return Ok(self.snapshot());
+        };
+
+        // Unblock reverse-RPCs before session/cancel so the agent does not stay
+        // wedged on ask_user / plan after the host thinks it stopped.
+        if let Some(ref acp) = acp {
+            if let Some(id) = pending_ask {
+                let _ = acp
+                    .respond_ask_user_question(id, AskUserOutcome::Cancelled)
+                    .await;
+            }
+            if let Some(id) = pending_plan {
+                let _ = acp.respond_exit_plan_mode(id, "abandoned", None).await;
+            }
             let _ = acp.cancel().await;
         }
         // Stopped background turn is Ready again → park it warm.

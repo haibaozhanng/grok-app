@@ -3017,12 +3017,63 @@ export default function App() {
               p.sessionId !== viewingSessionIdRef.current
             ) {
               // Background chat asked a question — answer it on reopen.
-              setToast(trRef.current("session.backgroundPermission"));
+              // Same as permission: toast + force desktop notify (do not silent-drop).
+              setToast(trRef.current("session.backgroundAskUser"));
               window.setTimeout(() => setToast(null), 4200);
+              if (
+                shouldShowDesktopNotify(
+                  "permission",
+                  notifyPrefsRef.current,
+                )
+              ) {
+                showDesktopNotification({
+                  title: trRef.current("notify.askUserTitle"),
+                  body: trRef.current("session.backgroundAskUser"),
+                  tag: `ask-bg-${p.rpcId}`,
+                  force: true,
+                });
+              }
               return;
             }
             setAskUser(p);
+            // Foreground questionnaire: still nudge if OS allows (force so it
+            // works even when the window has focus — unlike turn-done).
+            if (
+              shouldShowDesktopNotify(
+                "permission",
+                notifyPrefsRef.current,
+              )
+            ) {
+              showDesktopNotification({
+                title: trRef.current("notify.askUserTitle"),
+                body: trRef.current("notify.askUserBody"),
+                tag: `ask-${p.rpcId}`,
+                force: true,
+              });
+            }
           }),
+        );
+        await track(
+          api.listen<{ sessionId?: string; rpcId?: number; seconds?: number }>(
+            "session://ask_user_timeout",
+            (p) => {
+              if (cancelled) return;
+              if (p?.sessionId) {
+                pendingAskUserBySessionRef.current.delete(p.sessionId);
+              }
+              setAskUser((prev) => {
+                if (!prev) return null;
+                if (p?.rpcId != null && prev.rpcId !== p.rpcId) return prev;
+                return null;
+              });
+              setToast(
+                trRef.current("session.askUserTimeout", {
+                  seconds: String(p?.seconds ?? 120),
+                }),
+              );
+              window.setTimeout(() => setToast(null), 5200);
+            },
+          ),
         );
         await track(
           api.listen<{
@@ -7597,20 +7648,19 @@ export default function App() {
         setTurnStartedAt(null);
       }
     }, STOP_LATCH_MS + 50);
-    try {
-      await api.sessionStop(sid);
+    const finishStopUi = (liveId: string | null, fromError: boolean) => {
       setRetryStatus(null);
       setStreamStall(null);
       setTurnStartedAt(null);
-      const liveId = sid || liveHostRef.current.sessionId;
+      setAskUser(null);
       if (liveId) {
+        clearPendingGates(liveId);
         if (timeoutSettledSessionId !== liveId) {
           settleStoppedSessionUi(liveId);
         }
         patchSessionMessages(liveId, (m) =>
           m.map((x) => ({ ...x, streaming: false })),
         );
-        // Prefer a clean end marker when stop settles normally.
         if (stopLatchRef.current.phase !== "force_idle") {
           patchSessionMessages(liveId, (prev) => {
             if (
@@ -7626,7 +7676,7 @@ export default function App() {
             return applyTurnMarker(prev, {
               sessionId: liveId,
               messageId: `end-stop-ok-${Date.now()}`,
-              marker: "turn_end",
+              marker: fromError ? "turn_cancelled" : "turn_end",
               reason: "user_stop",
               content: endOfTurnMarkerContent("user_stop"),
             });
@@ -7638,8 +7688,22 @@ export default function App() {
       const cleared = createStopLatchState();
       stopLatchRef.current = cleared;
       setStopLatch(cleared);
+    };
+    try {
+      await api.sessionStop(sid);
+      finishStopUi(sid || liveHostRef.current.sessionId, false);
     } catch (e) {
-      setLocalError(String(e));
+      const msg = String(e);
+      // Host used to return "no active session" when the process was already
+      // gone — UI stayed busy with a red Stop. Force-clear locally.
+      if (/no active session|no session|no alive/i.test(msg)) {
+        finishStopUi(sid || liveHostRef.current.sessionId, true);
+        setLocalError(null);
+        setToast(trRef.current("session.stopAlreadyIdle"));
+        window.setTimeout(() => setToast(null), 3200);
+      } else {
+        setLocalError(msg);
+      }
     }
   };
 
@@ -11096,7 +11160,15 @@ export default function App() {
                       settleStoppedSessionInLiveMap(lm, id),
                     );
                   } catch (e) {
-                    showToast(String(e), 4000);
+                    const msg = String(e);
+                    if (/no active session|no session|no alive/i.test(msg)) {
+                      setLiveMap((lm) =>
+                        settleStoppedSessionInLiveMap(lm, id),
+                      );
+                      showToast(tr("session.stopAlreadyIdle"), 3200);
+                    } else {
+                      showToast(msg, 4000);
+                    }
                   }
                 })();
               }}

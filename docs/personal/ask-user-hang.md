@@ -124,6 +124,19 @@ pending ask_user 时 turn 未结束，`prompt_in_flight` 仍 true；其它会话
 3. 超时后可正常发下一条消息，其它会话不会全体「连接中」。  
 4. 单测：parse + timeout cancel + resolve（沿用 `acp_client` / golden fixture）。
 
+## 已落地（personal/fix-ask-user-and-stop）
+
+| 项 | 状态 |
+|----|------|
+| 后台 `AskUserQuestion` 不再 `_` 丢弃 | ✅ `surface_ask_user_question` + background match arm |
+| 后台 `Plan` 同样补发 | ✅ |
+| Host 120s 超时自动 cancel + `session://ask_user_timeout` | ✅ |
+| stop 时先 cancel pending ask_user/plan 再 `session/cancel` | ✅ |
+| stop 无进程时强制 Ready / turn_marker，不再报错卡红钮 | ✅（原 `no active session`） |
+| 前端 stop 遇 no active session 也本地清 busy | ✅ |
+| 后台/前台 ask_user 强制桌面通知 | ✅ |
+| 未读角标 / modal 兜底 transcript | ⏳ 未做 |
+
 ## 非目标
 
 - 不改 Grok Build CLI 工具定义（除非上游协议变更）。

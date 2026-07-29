@@ -100,6 +100,12 @@ export const zhTW: Record<MessageKey, string> = {
   "session.forkFailed": "分叉對話失敗",
   "session.backgroundPermission":
     "另一個對話需要權限批准 — 請切換過去以允許或拒絕。",
+  "session.backgroundAskUser":
+    "另一個對話在等你回答 — 切換過去繼續。",
+  "session.askUserTimeout":
+    "Agent 提問已逾時（{seconds}s）— 已取消本輪，避免對話卡住。",
+  "session.stopAlreadyIdle":
+    "此對話沒有存活的 Agent 進程 — 已清除忙碌狀態。",
   "session.rewind": "回退時間線",
   "session.rewindTitle": "回退對話",
   "session.rewindHint":
@@ -1427,6 +1433,8 @@ export const zhTW: Record<MessageKey, string> = {
   "notify.turnDoneBody": "對話已就緒，可繼續輸入。",
   "notify.permissionTitle": "需要授權",
   "notify.permissionBody": "Agent 正在等待你的批准。",
+  "notify.askUserTitle": "Agent 需要你回答",
+  "notify.askUserBody": "開啟對話完成問卷後可繼續。",
 
   "slash.section.commands": "指令",
   "slash.section.skills": "技能",

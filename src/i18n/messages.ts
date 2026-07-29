@@ -111,6 +111,12 @@ const en = {
   "session.forkFailed": "Could not fork chat",
   "session.backgroundPermission":
     "Another chat needs permission — switch to it to approve or deny.",
+  "session.backgroundAskUser":
+    "Another chat is waiting for your answer — switch to it to continue.",
+  "session.askUserTimeout":
+    "Agent question timed out after {seconds}s — the turn was cancelled so the session does not freeze.",
+  "session.stopAlreadyIdle":
+    "No live agent process for this chat — cleared the busy state.",
   "session.rewind": "Rewind timeline",
   "session.rewindTitle": "Rewind conversation",
   "session.rewindHint":
@@ -1481,6 +1487,8 @@ const en = {
   "notify.turnDoneBody": "Session is ready for the next message.",
   "notify.permissionTitle": "Permission needed",
   "notify.permissionBody": "The agent is waiting for your approval.",
+  "notify.askUserTitle": "Agent needs your answer",
+  "notify.askUserBody": "Open the chat to answer the questionnaire.",
 
   // Slash palette
   "slash.section.commands": "Commands",
@@ -2328,6 +2336,12 @@ const zh: Record<MessageKey, string> = {
   "session.forkOk": "已分叉 · 已打开新会话",
   "session.backgroundPermission":
     "另一个会话需要权限批准 — 请切换过去以允许或拒绝。",
+  "session.backgroundAskUser":
+    "另一个会话在等你回答 — 切换过去继续。",
+  "session.askUserTimeout":
+    "Agent 提问已超时（{seconds}s）— 已取消本轮，避免会话卡死。",
+  "session.stopAlreadyIdle":
+    "此会话没有存活的 Agent 进程 — 已清除忙碌状态。",
   "session.forkFailed": "分叉会话失败",
   "session.rewind": "回退时间线",
   "session.rewindTitle": "回退对话",
@@ -3656,6 +3670,8 @@ const zh: Record<MessageKey, string> = {
   "notify.turnDoneBody": "会话已就绪，可继续输入。",
   "notify.permissionTitle": "需要授权",
   "notify.permissionBody": "Agent 正在等待你的批准。",
+  "notify.askUserTitle": "Agent 需要你回答",
+  "notify.askUserBody": "打开会话完成问卷后可继续。",
 
   "slash.section.commands": "命令",
   "slash.section.skills": "技能",
