@@ -158,15 +158,17 @@ import {
   type ViewFocus,
 } from "@/lib/viewFocus";
 import {
-  busySessionIds,
+  attentionSessionIds,
   projectHostIntoLiveMap,
   projectLiveToolFromMessages,
   markSawModelOutput,
   markSawToolActivity,
   mergeTurnProgressFromMessages,
   resumeStateForSession,
+  sessionNeedsPermission,
   settleStoppedSessionInLiveMap,
   settleStoppedSessionSnapshot,
+  workingSessionIds,
   type SessionLiveMap,
 } from "@/lib/sessionLiveStore";
 import {
@@ -374,6 +376,7 @@ import {
   IconClock,
   IconClose,
   IconEdit,
+  IconAlertTriangle,
   IconNewChat as IconSquarePen,
   IconNewChat,
   IconImagine,
@@ -1147,15 +1150,37 @@ export default function App() {
   const pendingAskUserBySessionRef = useRef<Map<string, AskUserPayload>>(
     new Map(),
   );
+  /**
+   * Session ids with a pending human gate (permission / ask_user) that must
+   * stay reactive for the sidebar even when liveMap lags a frame.
+   */
+  const [gateAttentionIds, setGateAttentionIds] = useState<string[]>([]);
+  const markGateAttention = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    setGateAttentionIds((prev) =>
+      prev.includes(sessionId) ? prev : [...prev, sessionId],
+    );
+  }, []);
+  const clearGateAttention = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    setGateAttentionIds((prev) =>
+      prev.includes(sessionId) ? prev.filter((id) => id !== sessionId) : prev,
+    );
+  }, []);
   /** Drop a session's stored gates (answered, cancelled, or turn ended). */
   const clearPendingGates = useCallback((sessionId?: string | null) => {
     if (!sessionId) return;
     pendingPermBySessionRef.current.delete(sessionId);
     pendingAskUserBySessionRef.current.delete(sessionId);
+    setGateAttentionIds((prev) =>
+      prev.includes(sessionId) ? prev.filter((id) => id !== sessionId) : prev,
+    );
   }, []);
   /** Stable handle for the once-mounted event listeners. */
   const clearPendingGatesRef = useRef(clearPendingGates);
   clearPendingGatesRef.current = clearPendingGates;
+  const markGateAttentionRef = useRef(markGateAttention);
+  markGateAttentionRef.current = markGateAttention;
   /** Polite SR announce for stream start/stop (not every token). */
   const [streamA11yNote, setStreamA11yNote] = useState("");
   const wasStreamingRef = useRef(false);
@@ -3030,6 +3055,7 @@ export default function App() {
             // Park it against its session so returning to that chat can answer.
             if (p.sessionId) {
               pendingPermBySessionRef.current.set(p.sessionId, p);
+              markGateAttentionRef.current(p.sessionId);
             }
             // Only surface the bar when viewing the session that needs it.
             if (
@@ -3081,6 +3107,7 @@ export default function App() {
             }
             if (p.sessionId) {
               pendingAskUserBySessionRef.current.set(p.sessionId, p);
+              markGateAttentionRef.current(p.sessionId);
             }
             if (
               p.sessionId &&
@@ -4202,16 +4229,58 @@ export default function App() {
   }, [sessions, projects, tr]);
 
   /**
-   * Multi-session busy ids (stream / permission) for sidebar spinner.
-   * Uses liveMap projection + liveHost fallback. Excludes connecting.
+   * Multi-session pure work (spinner). Excludes permission / ask_user gates.
    */
-  const busyIds = useMemo(() => {
-    const set = busySessionIds(liveMap);
-    if (liveHost.sessionId && isSessionLiveStreaming(liveHost.state)) {
+  const workingIds = useMemo(() => {
+    const set = workingSessionIds(liveMap);
+    if (
+      liveHost.sessionId &&
+      liveHost.state === "streaming" &&
+      !sessionNeedsPermission(liveMap, liveHost.sessionId) &&
+      liveHost.state !== "awaiting_permission"
+    ) {
       set.add(liveHost.sessionId);
     }
+    // Host may report awaiting_permission without liveMap row yet.
+    if (liveHost.sessionId && liveHost.state === "awaiting_permission") {
+      set.delete(liveHost.sessionId);
+    }
+    for (const id of gateAttentionIds) set.delete(id);
+    if (askUser?.sessionId) set.delete(askUser.sessionId);
+    if (perm?.sessionId) set.delete(perm.sessionId);
     return set;
-  }, [liveMap, liveHost.sessionId, liveHost.state]);
+  }, [
+    liveMap,
+    liveHost.sessionId,
+    liveHost.state,
+    gateAttentionIds,
+    askUser?.sessionId,
+    perm?.sessionId,
+  ]);
+
+  /** Needs user choice: permission bar or ask_user questionnaire → sidebar ! */
+  const attentionIds = useMemo(() => {
+    const set = attentionSessionIds(liveMap);
+    if (liveHost.sessionId && liveHost.state === "awaiting_permission") {
+      set.add(liveHost.sessionId);
+    }
+    if (session.sessionId && session.state === "awaiting_permission") {
+      set.add(session.sessionId);
+    }
+    if (askUser?.sessionId) set.add(askUser.sessionId);
+    if (perm?.sessionId) set.add(perm.sessionId);
+    for (const id of gateAttentionIds) set.add(id);
+    return set;
+  }, [
+    liveMap,
+    liveHost.sessionId,
+    liveHost.state,
+    session.sessionId,
+    session.state,
+    askUser?.sessionId,
+    perm?.sessionId,
+    gateAttentionIds,
+  ]);
   const settleStoppedSessionUi = useCallback((sessionId: string) => {
     setLiveMap((prev) => {
       const next = settleStoppedSessionInLiveMap(prev, sessionId);
@@ -10428,9 +10497,13 @@ export default function App() {
                                 : null
                             }
                             renderItem={(s) => {
-                              const working = busyIds.has(s.id);
+                              const needsAttention = attentionIds.has(s.id);
+                              const working =
+                                !needsAttention && workingIds.has(s.id);
                               const unread =
-                                !working && isUnread(unreadMap, s.id);
+                                !needsAttention &&
+                                !working &&
+                                isUnread(unreadMap, s.id);
                               return (
                                 <div
                                   className={
@@ -10439,6 +10512,9 @@ export default function App() {
                                       ? " tree-l3--active"
                                       : "") +
                                     (s.archived ? " tree-l3--archived" : "") +
+                                    (needsAttention
+                                      ? " tree-l3--attention"
+                                      : "") +
                                     (working ? " tree-l3--working" : "") +
                                     (unread ? " tree-l3--unread" : "")
                                   }
@@ -10477,7 +10553,25 @@ export default function App() {
                                       {s.title || "Untitled"}
                                     </span>
                                   </span>
-                                  {working ? (
+                                  {needsAttention ? (
+                                    <Tip
+                                      label={tr(
+                                        "sidebar.sessionNeedsAttention",
+                                      )}
+                                    >
+                                      <span
+                                        className="tree-l3__status tree-l3__status--attention"
+                                        aria-label={tr(
+                                          "sidebar.sessionNeedsAttention",
+                                        )}
+                                      >
+                                        <IconAlertTriangle
+                                          size={14}
+                                          className="tree-l3__attention"
+                                        />
+                                      </span>
+                                    </Tip>
+                                  ) : working ? (
                                     <Tip label={tr("sidebar.sessionWorking")}>
                                       <span
                                         className="tree-l3__status"
@@ -10608,8 +10702,13 @@ export default function App() {
                     : null
                 }
                 renderItem={(s) => {
-                  const working = busyIds.has(s.id);
-                  const unread = !working && isUnread(unreadMap, s.id);
+                  const needsAttention = attentionIds.has(s.id);
+                  const working =
+                    !needsAttention && workingIds.has(s.id);
+                  const unread =
+                    !needsAttention &&
+                    !working &&
+                    isUnread(unreadMap, s.id);
                   return (
                     <div
                       className={
@@ -10617,6 +10716,7 @@ export default function App() {
                         (session.sessionId === s.id
                           ? " tree-l3--active"
                           : "") +
+                        (needsAttention ? " tree-l3--attention" : "") +
                         (working ? " tree-l3--working" : "") +
                         (unread ? " tree-l3--unread" : "")
                       }
@@ -10654,7 +10754,21 @@ export default function App() {
                           {s.title || "Untitled"}
                         </span>
                       </span>
-                      {working ? (
+                      {needsAttention ? (
+                        <Tip label={tr("sidebar.sessionNeedsAttention")}>
+                          <span
+                            className="tree-l3__status tree-l3__status--attention"
+                            aria-label={tr(
+                              "sidebar.sessionNeedsAttention",
+                            )}
+                          >
+                            <IconAlertTriangle
+                              size={14}
+                              className="tree-l3__attention"
+                            />
+                          </span>
+                        </Tip>
+                      ) : working ? (
                         <Tip label={tr("sidebar.sessionWorking")}>
                           <span
                             className="tree-l3__status"

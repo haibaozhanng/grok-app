@@ -304,6 +304,21 @@ export function busySessionIds(map: SessionLiveMap): Set<string> {
   return out;
 }
 
+/**
+ * Pure agent work (spinner) — excludes human gates (permission / ask_user).
+ * Those use {@link attentionSessionIds} + sidebar exclamation instead.
+ */
+export function workingSessionIds(map: SessionLiveMap): Set<string> {
+  const out = new Set<string>();
+  for (const s of Object.values(map)) {
+    if (sessionNeedsPermission(map, s.sessionId)) continue;
+    if (s.state === "streaming") {
+      out.add(s.sessionId);
+    }
+  }
+  return out;
+}
+
 export function isSessionLiveBusy(
   map: SessionLiveMap,
   sessionId: string | null | undefined,
@@ -319,4 +334,15 @@ export function sessionNeedsPermission(
   if (!sessionId) return false;
   const s = map[sessionId];
   return !!s?.awaitingPermission || s?.state === "awaiting_permission";
+}
+
+/** Session ids waiting on the user (permission bar or ask_user questionnaire). */
+export function attentionSessionIds(map: SessionLiveMap): Set<string> {
+  const out = new Set<string>();
+  for (const s of Object.values(map)) {
+    if (sessionNeedsPermission(map, s.sessionId)) {
+      out.add(s.sessionId);
+    }
+  }
+  return out;
 }

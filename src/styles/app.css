@@ -862,6 +862,21 @@ html.platform-mac[data-theme="light"] .settings-page__content {
   color: var(--accent, var(--text-secondary));
 }
 
+/* Needs user choice (permission / ask_user) — replace spinner with alert. */
+.tree-l3__status--attention {
+  color: var(--warning, #f59e0b);
+}
+
+.tree-l3__attention {
+  color: var(--warning, #f59e0b);
+  flex-shrink: 0;
+}
+
+.tree-l3--attention .tree-l3__name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 /* Unread: finished while away — solid accent dot (replaces spinner). */
 .tree-l3__unread-dot {
   display: block;

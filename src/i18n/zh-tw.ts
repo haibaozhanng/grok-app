@@ -33,6 +33,7 @@ export const zhTW: Record<MessageKey, string> = {
   "sidebar.unarchive": "取消封存",
   "sidebar.showArchived": "顯示已封存",
   "sidebar.sessionWorking": "進行中…",
+  "sidebar.sessionNeedsAttention": "需要你選擇 — 點開回答",
   "sidebar.sessionUnread": "回合已完成 — 點開查看",
   "user.menu": "個人中心",
   "user.theme": "主題",
