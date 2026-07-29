@@ -11154,17 +11154,25 @@ export default function App() {
               }}
               onStopSession={(id) => {
                 void (async () => {
-                  try {
-                    await api.sessionStop(id);
+                  const clearGates = () => {
+                    clearPendingGates(id);
+                    setAskUser((prev) =>
+                      prev?.sessionId === id ? null : prev,
+                    );
+                    setPerm((prev) =>
+                      prev?.sessionId === id ? null : prev,
+                    );
                     setLiveMap((lm) =>
                       settleStoppedSessionInLiveMap(lm, id),
                     );
+                  };
+                  try {
+                    await api.sessionStop(id);
+                    clearGates();
                   } catch (e) {
                     const msg = String(e);
                     if (/no active session|no session|no alive/i.test(msg)) {
-                      setLiveMap((lm) =>
-                        settleStoppedSessionInLiveMap(lm, id),
-                      );
+                      clearGates();
                       showToast(tr("session.stopAlreadyIdle"), 3200);
                     } else {
                       showToast(msg, 4000);

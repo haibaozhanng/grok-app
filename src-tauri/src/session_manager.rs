@@ -1979,7 +1979,7 @@ impl SessionManager {
     /// Works for the live focus slot **or** a demoted background turn. Without
     /// the background path, switching chats mid-turn dropped the reverse-RPC
     /// and the agent hung until process death / app restart.
-    fn surface_ask_user_question(
+    async fn surface_ask_user_question(
         self: &Arc<Self>,
         app: &AppHandle,
         app_session_id: &str,
@@ -1987,13 +1987,13 @@ impl SessionManager {
         tool_call_id: Option<String>,
         questions: Vec<AskUserQuestionItem>,
     ) {
-        let accepted = self
+        let (accepted, acp_for_reject) = self
             .with_session_mut(app_session_id, |s| {
                 if Self::is_session_load_replay(s.prompt_in_flight) {
                     tracing::debug!(
                         "acp ask_user dropped: no prompt in flight (replay) sid={app_session_id}"
                     );
-                    return false;
+                    return (false, s.acp.clone());
                 }
                 s.pending_ask_user_rpc_id = Some(rpc_id);
                 // Mark waiting so stop / stall / defer treat the turn as busy.
@@ -2001,14 +2001,23 @@ impl SessionManager {
                     let _ = s.fsm.await_permission();
                 }
                 Self::touch_activity_locked(s);
-                true
+                (true, None)
             })
-            .unwrap_or(false);
+            .unwrap_or((false, None));
 
         if !accepted {
+            // Must cancel the reverse-RPC or the agent waits ~minutes again.
             tracing::warn!(
-                "acp ask_user not attached sid={app_session_id} id={rpc_id} — agent may hang until cancel"
+                "acp ask_user not attached sid={app_session_id} id={rpc_id} — auto-cancel"
             );
+            if let Some(acp) = acp_for_reject {
+                if let Err(e) = acp
+                    .respond_ask_user_question(rpc_id, AskUserOutcome::Cancelled)
+                    .await
+                {
+                    tracing::warn!("ask_user auto-cancel failed: {e}");
+                }
+            }
             return;
         }
 
@@ -3773,7 +3782,8 @@ impl SessionManager {
                     rpc_id,
                     tool_call_id,
                     questions,
-                );
+                )
+                .await;
             }
             AcpEvent::Error { error } => {
                 {
@@ -4553,7 +4563,8 @@ impl SessionManager {
                     rpc_id,
                     tool_call_id,
                     questions,
-                );
+                )
+                .await;
             }
             AcpEvent::Plan {
                 entries,
@@ -5761,10 +5772,24 @@ impl SessionManager {
         let target = self.resolve_target_session(session_id)?;
         let (acp, id) = self
             .with_session_mut(&target, |s| {
-                let id = rpc_id.or(s.pending_ask_user_rpc_id.take());
-                // Clear pending id even if rpc_id was explicit.
-                if rpc_id.is_some() {
-                    s.pending_ask_user_rpc_id = None;
+                // Only answer the still-pending RPC. Avoid double-respond after
+                // host timeout already cancelled the same id.
+                let id = match (rpc_id, s.pending_ask_user_rpc_id) {
+                    (Some(rid), Some(pid)) if rid == pid => {
+                        s.pending_ask_user_rpc_id = None;
+                        Some(rid)
+                    }
+                    (None, Some(pid)) => {
+                        s.pending_ask_user_rpc_id = None;
+                        Some(pid)
+                    }
+                    (Some(_), None) | (None, None) => None,
+                    (Some(_), Some(_)) => None, // mismatched id — leave pending alone
+                };
+                if id.is_some() && s.fsm.state() == SessionState::AwaitingPermission {
+                    // Mirror permission resolve / ask_user timeout so deferred
+                    // prompt_complete can finish and UI leaves "waiting".
+                    let _ = s.fsm.permission_resolved_continue();
                 }
                 (s.acp.clone(), id)
             })
