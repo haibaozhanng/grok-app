@@ -1161,12 +1161,6 @@ export default function App() {
       prev.includes(sessionId) ? prev : [...prev, sessionId],
     );
   }, []);
-  const clearGateAttention = useCallback((sessionId: string) => {
-    if (!sessionId) return;
-    setGateAttentionIds((prev) =>
-      prev.includes(sessionId) ? prev.filter((id) => id !== sessionId) : prev,
-    );
-  }, []);
   /** Drop a session's stored gates (answered, cancelled, or turn ended). */
   const clearPendingGates = useCallback((sessionId?: string | null) => {
     if (!sessionId) return;
@@ -4233,15 +4227,11 @@ export default function App() {
    */
   const workingIds = useMemo(() => {
     const set = workingSessionIds(liveMap);
-    if (
-      liveHost.sessionId &&
-      liveHost.state === "streaming" &&
-      !sessionNeedsPermission(liveMap, liveHost.sessionId) &&
-      liveHost.state !== "awaiting_permission"
-    ) {
-      set.add(liveHost.sessionId);
+    if (liveHost.sessionId && liveHost.state === "streaming") {
+      if (!sessionNeedsPermission(liveMap, liveHost.sessionId)) {
+        set.add(liveHost.sessionId);
+      }
     }
-    // Host may report awaiting_permission without liveMap row yet.
     if (liveHost.sessionId && liveHost.state === "awaiting_permission") {
       set.delete(liveHost.sessionId);
     }
