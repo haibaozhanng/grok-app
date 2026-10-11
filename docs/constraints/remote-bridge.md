@@ -1,0 +1,58 @@
+# remote-bridge/ 约束
+
+<!-- 收割自 aoci 索引（2026-10-11）；条目为收割时点的隐性约束，使用前回源码核对。 -->
+
+- `remote-bridge/README.md` — Host不启动此包，也不为App安装外部agent-connect
+- `remote-bridge/bin/grok-remote-bridge.js` — 启动器注释不是App现行接线证据；该包已由README标为历史参考
+- `remote-bridge/package.json` — 描述沿用迁入时期措辞，App现行运行链已改为Rust进程内桥
+- `remote-bridge/src/agent/fake-grok.ts` — tokenStreamScript只返回占位生成器；生成可用事件数组的入口是makeTokenEvents
+- `remote-bridge/src/agent/grok/driver.ts` — 已有文本delta时不再重复发送最终全文；close保留热状态，stop关闭池并释放预算
+- `remote-bridge/src/bridge/commands.ts` — 仅解析能力不保证每种Engine都实现对应命令
+- `remote-bridge/src/bridge/engine.ts` — App信任项目为空时回退配置项目；流运输失败以已累计全文补普通回复，不重跑Agent
+- `remote-bridge/src/bridge/start.ts` — 发送者白名单在下载媒体前检查；dryRun不连接WebSocket，仍校验必填凭据并构造引擎
+- `remote-bridge/src/cli/doctor.ts` — 身份文件缺失只显示提醒，不单独把ok设为false
+- `remote-bridge/src/cli/feishu-cmd.ts` — qr-image选项实际保存二维码URL文本，不生成PNG；owner可能是机器人ID，不能直接当用户身份
+- `remote-bridge/src/cli/main.ts` — 无命令默认start；全局flag不作为项目名；多项目无显式项目选择时自动走Supervisor
+- `remote-bridge/src/cli/migrate.ts` — 默认跳过已存在目标，force允许覆盖；sessions搬到data/sessions，并非注释所称只导入配置
+- `remote-bridge/src/cli/service-cmd.ts` — Windows默认winsw，install和uninstall可选schtasks；print不安装服务但会写生成配置文件
+- `remote-bridge/src/config/credentials.ts` — looks real只表示通过占位检查，不代表远端鉴权成功
+- `remote-bridge/src/config/load.ts` — 真实凭据优先于占位，同质量优先旧feishu块；默认allow_from为通配且权限mode回退yolo
+- `remote-bridge/src/config/save.ts` — 单一重复飞书绑定省略platforms；owner写入须显式选项；writeConfig直接覆盖文件并非原子提交
+- `remote-bridge/src/config/types.ts` — 历史桥默认yolo、ACP和540秒超时，与桌面默认Ask不是同一配置契约
+- `remote-bridge/src/config/validate.ts` — 空allow_from只给警告；同app_id的空或通配allow_chat按重叠处理，阻止路由冲突
+- `remote-bridge/src/core/acl.ts` — 缺失、空白或通配名单放行；显式非空聊天名单同样约束私聊，不能依据注释当作私聊无条件通过
+- `remote-bridge/src/core/engine.ts` — 忙会话不排队，按策略提醒或忽略；优先withStream再streamPatch；此实现未处理解析器中的project/resume命令
+- `remote-bridge/src/core/session-key.ts` — 外部sessionKey不含项目ID，隔离依赖独立Engine；线程模式缺rootMsgId回退用户键
+- `remote-bridge/src/core/session-manager.ts` — 首次Agent ID由项目和会话键确定，reset改随机ID；锁只在内存，JSON保存直接覆盖
+- `remote-bridge/src/core/stream-coalesce.ts` — 不是后台定时器；只在push或flush发送，首次append失败后丢缓冲并停止后续补丁
+- `remote-bridge/src/feishu/credentials.ts` — 未指定平台先试飞书再Lark；机器人信息缺open_id返回空字符串
+- `remote-bridge/src/feishu/inbound.ts` — 失败时互换image/file下载类型重试；默认写旧.agent-connect/inbound，all按类型分组而非原输入顺序
+- `remote-bridge/src/feishu/media.ts` — 默认仅取已存在非空普通文件，最多16个且单个50MiB；未证明位于项目可信根
+- `remote-bridge/src/feishu/outbound.ts` — 有app凭据时优先REST上传；无凭据才走SDK，单附件失败不阻止后续附件
+- `remote-bridge/src/feishu/registration.ts` — slow_down每次增加5秒；截止取服务过期与选项较早值；debug会打印原始响应，不能视作已脱敏日志
+- `remote-bridge/src/feishu/setup.ts` — --app不能与分开凭据参数混用；new拒绝凭据，auto有完整凭据才选bind
+- `remote-bridge/src/feishu/upload.ts` — 图像限10MiB、文件30MiB；fetch只对网络异常重试，业务错误另行处理；音频时长固定3000
+- `remote-bridge/src/grok/acp/client.ts` — 权限反向请求无条件回allow-always；abort只标记错误不发cancel；每进程prompt串行，通知未按sessionId过滤
+- `remote-bridge/src/grok/acp/jsonrpc.ts` — 解析只做JSON解码，不校验协议结构；非法行返回null
+- `remote-bridge/src/grok/acp/pool.ts` — key直接使用传入workDir；驱逐只看lastUsed不查忙状态；单例仅首次创建采纳配置
+- `remote-bridge/src/grok/acp/runner.ts` — 此ACP路径只传rules等已接字段，不把profile中的工具禁用与maxTurns自动当作协议强制限制
+- `remote-bridge/src/grok/args.ts` — 无效自定义JSON回退默认模板；已有output-format不覆写，故不保证自定义模板仍输出streaming-json
+- `remote-bridge/src/grok/events.ts` — 已有文本时不重复追加result全文；非JSON非时间戳行直接视为文本
+- `remote-bridge/src/grok/profile.ts` — 聊天档强制noMemory，工具黑名单与回合上限是否生效仍取决于所用运行后端
+- `remote-bridge/src/grok/runner.ts` — ACP抛异常才回退spawn一次，返回error结果不会触发回退；spawn超时或abort发SIGTERM
+- `remote-bridge/src/platform/feishu/adapter.ts` — 会话键构造未传rootMsgId，线程模式会回退用户键；流缓冲是适配器级成员，不能推定按会话隔离
+- `remote-bridge/src/platform/feishu/hub.ts` — Hub不做每项目ACL，交给适配器；最后成员注销才断连接，注册过程没有并发互斥锁
+- `remote-bridge/src/platform/mock/index.ts` — clear清空输出记录但保留去重与撤回集合；failStreamAlways内部为999次失败预算
+- `remote-bridge/src/runtime/budget.ts` — 预算是本进程对象计数，不是跨进程系统配额
+- `remote-bridge/src/runtime/daemon.ts` — 等待结束仍活着即返回spawn成功，即使PID文件尚未写入；不等于桥已连接成功
+- `remote-bridge/src/runtime/pid.ts` — 锁是先检查后覆盖普通文件，并非原子排他锁；仅核PID存活，不核进程身份或PID复用
+- `remote-bridge/src/service/manager.ts` — printOnly仍写生成文件；WinSW安装只产配置需手动安装；macOS停止同时disable以防KeepAlive复活
+- `remote-bridge/src/service/resolve-exec.ts` — 包名探测只识别旧agent-connect/lark-grok名称，未识别当前包名时回退cwd；优先dist，其次Bun源码
+- `remote-bridge/src/service/templates.ts` — 服务名与模板默认配置根仍为agent-connect；生成字符串不代表系统服务已安装
+- `remote-bridge/src/session/store.ts` — 损坏文件回退空状态；/new重置替换该范围映射，listByWorkDir不是完整历史档案；写盘直接覆盖
+- `remote-bridge/src/supervisor/index.ts` — 项目启动可部分成功；mock仅豁免缺凭据校验，带app_id时仍会向Hub注册，不能默认认为绝无真实连接
+- `remote-bridge/src/util/logger.ts` — 开启文件日志会写入session banner；后续磁盘写失败被吞掉，不阻断桥运行
+- `remote-bridge/src/util/paths.ts` — 数据根优先GROK_REMOTE_BRIDGE_HOME，再GROK_APP_HOME/remote/bridge-data；旧.agent-connect仅迁移入口
+- `remote-bridge/src/util/redact.ts` — 这是已知键和模式脱敏，不保证任意日志正文无密钥；安全basename不能代替源文件访问权限检查
+- `remote-bridge/tsconfig.build.json` — 仅编译src，排除tests；与开发noEmit配置分离
+- `remote-bridge/tsconfig.json` — 允许TS扩展导入；正式输出由tsconfig.build.json另定

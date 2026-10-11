@@ -1,0 +1,60 @@
+# docs/ 约束
+
+<!-- 收割自 aoci 索引（2026-10-11）；条目为收割时点的隐性约束，使用前回源码核对。 -->
+
+- `docs/ACCEPTANCE-slash-composer-VERIFICATION.md` — 当次未运行测试；历史缺口与通过项均不能直接当作当前版本结论
+- `docs/ACCEPTANCE-slash-composer.md` — 这是验收清单，不代表所有场景已经执行通过
+- `docs/AUTOPLAN-实施规格.md` — 2026年7月21日历史规格，首发排除项不能覆盖后续演进后的实际范围
+- `docs/BUILD.md` — 窗口关闭与应用退出不同；发布流程另以专门wiki为维护入口
+- `docs/P0-能力矩阵.md` — 内测允许阶段性子集，不降低公开日用要求；表格本身不是验收已通过证据
+- `docs/SPIKE-ACP.md` — CLI0.2.106在ask且非YOLO时仍观察到写入无权限请求；这是特定版本实验，不保证后续行为
+- `docs/TODOS.md` — 来自2026年7月初期规划，未勾选或排除项不等于当前实现状态
+- `docs/design-tokens.md` — 本文为初期设计草案，实际视觉值须读现行样式；token名称与可调数值区别处理
+- `docs/desktop-auto-update.md` — 必须安装成功后才停止后台服务并重启；无签名构建走手动下载，Linux仅AppImage支持应用内更新
+- `docs/features/app-update-flow.md` — 手动流程属于未签名分支，不表示签名发行版不能应用内更新
+- `docs/features/desktop-shell.md` — 外链不能交由cmd /C start，查询参数可能被错误拆分
+- `docs/features/diagnostics-center.md` — 工具心跳约25秒一次，最老开放工具超过3小时后停止
+- `docs/features/resource-workbench.md` — SVG不得作为原始HTML注入
+- `docs/features/trust-sandbox.md` — media协议同时检查路径和非主窗口来源；资产协议拒绝常见密钥位置
+- `docs/llm-wiki/README.md` — 不同主题以对应页面为维护入口，不依赖会话记忆
+- `docs/llm-wiki/account.md` — 独立agent-home需在登录及ACP启动前同步auth.json，退出登录清除两份；UI不得收到原始令牌
+- `docs/llm-wiki/agent-gui-reference.md` — 变更行操作只打开、Reveal或复制路径，不提供危险discard
+- `docs/llm-wiki/automations.md` — Host每30秒调度且忙回合不抢跑；托盘仍触发，退出进程暂停；WebView不另起双触发
+- `docs/llm-wiki/catalog.md` — 启动参数必须在stdio前；无set_effort RPC，改强度需软重连；提供商不进入模型选择器
+- `docs/llm-wiki/dialogs.md` — 禁止window.confirm、prompt、alert；GlassModal历史命名不意味着必须毛玻璃
+- `docs/llm-wiki/git-worktrees.md` — 新工作树放主目录旁；删除拒绝main，清理prune只处理已失效记录而非现存工作树
+- `docs/llm-wiki/i18n.md` — en是键权威和默认语言；新增键同批同步zh与zh-TW，不能用局部语言判断代替
+- `docs/llm-wiki/icons.md` — 关闭窗口隐藏到托盘，Quit才退出；Windows任务栏恢复不能只依赖set_skip_taskbar
+- `docs/llm-wiki/maintain.md` — PR仅CLOSED不足以认定可删；须核主干含内容并保留独有提交、未提交改动和仍使用的工作树
+- `docs/llm-wiki/plugins-marketplace.md` — 插件状态以CLI/config为准；用户确认后才信任安装，成功软重启Agent；不另建插件状态库
+- `docs/llm-wiki/providers.md` — 中转启动用provider id并移除agent-home的OAuth文件；导入同id覆盖且不自动激活，UI只见hasApiKey
+- `docs/llm-wiki/release.md` — 无对应版本CHANGELOG禁止打tag；Release正文只取本版本章节，不以GitHub手工正文代替仓库源
+- `docs/llm-wiki/remote-im.md` — 项目限已信任集合；当前实现不spawn Node或外部agent-connect，文档保留迁入过程历史
+- `docs/llm-wiki/session-continuity.md` — 无prompt时丢弃load回放副作用；焦点切换不杀忙回合；队列只取查看会话，prompt_complete不替RPC结算
+- `docs/llm-wiki/settings-ia.md` — 新增可见设置必须登记搜索项；旧section链接继续有效，未知tab回退默认页，不改字段读写语义
+- `docs/llm-wiki/setup.md` — 找不到可运行CLI不能进入首页；Windows优先USERPROFILE，避免MSYS HOME误定位
+- `docs/llm-wiki/slash-composer.md` — 技能开关只过滤App候选，Agent仍读磁盘；MCP开关需同步配置并在新连接注入；菜单开时Enter不发送
+- `docs/plans/2026-07-24-live-voice-agent-delegation.md` — 这是2026年7月24日提案；语音主持与CLI听写被明确区分，不构成当前功能已完成证明
+- `docs/plans/2026-07-26-chat-session-ux-renovation.md` — 保留Host FSM、journal和直播单行工具；历史完成记录不代替当前回归，D5-D7被明确延后
+- `docs/plans/2026-07-26-multi-session-queue-ux-requirements.md` — 重点约束切会话不误杀回合、后台事件不丢失；文档中的现场复盘和落地日期属于历史证据
+- `docs/plans/2026-07-26-settings-ia-reorg.md` — 方案限定展示与导航，保持设置读写和副作用；历史盘点行号与状态须对照当前实现
+- `docs/plans/2026-07-26-开源诊断与整改交接.md` — 基于7ae0d36历史诊断；条目与行号须重新定位核验，不把报告中的漏洞或完成记录直接视为当前结论
+- `docs/plans/2026-07-27-deferred-hardening-plan.md` — 修订记录已标S1-S5合入main；应核现状避免按文首延后标题重复实施
+- `docs/plans/2026-07-27-issues-prs-update-ship-plan.md` — 库存和半成品判断是2026年7月27日快照；不能覆盖后来签名更新已实现的事实
+- `docs/plans/2026-07-28-session-message-nodes-design.md` — 粒度是一条user或assistant消息，不是回合或Fork树；标为设计稿，不保证已经实现
+- `docs/plans/2026-07-28-wallpaper-x-imagine-design.md` — 当前壁纸仍走IDB及localStorage元数据；首版规划不含云同步、自动轮换或视频重编码
+- `docs/plans/GOAL-remote-im.md` — 只接Grok Build及已信任项目；边界已更新为Rust进程内，不再spawn外部Node桥
+- `docs/research/codepilot-session-chat-audit.md` — 基于503d4f8历史对照，不是当前缺陷清单；建议保留Host FSM和Grok技术栈
+- `docs/svg/SuperGrokHeavy.svg` — 原始SVG里的Tailwind dark类不会自行编译，徽章色由实际组件CSS变量覆盖
+- `docs/分析-Grok-Desktop对照报告.md` — 2026年7月22日对照报告；赞助商目录等建议不等于已落地行为
+- `docs/分析-LobeHub-Chat迁移报告.md` — 记录选择自建组件与CSS，不是整体迁入Lobe聊天状态管理或依赖栈
+- `docs/项目需求.md` — 2026年7月21日基线；其中不做IM等首发排除项已随后续规格演进，不能当当前范围约束
+- `docs/首次运行冒烟清单.md` — Windows与macOS每版执行，Linux至少隔版；空结果表不是测试已通过证明
+- `docs/验收/02-workbench-structural.html` — 静态结构样张，按钮没有真实业务动作
+- `docs/验收/03-permission-bar-structural.html` — 用于结构截图，不是权限执行测试
+- `docs/验收/04-onboarding-structural.html` — 仅样张；标题写三入口但正文有四张卡，不据此推断现行向导
+- `docs/验收/05-doctor-structural.html` — 固定示例值，不是实际探测结果或现行Doctor界面
+- `docs/验收/06-light-structural.html` — 静态样张不证明真实应用浅色模式已验收
+- `docs/验收/matrix-progress.md` — 2026年7月21日历史进度，不能作为当前通过或缺失结论
+- `docs/验收/structural-inventory.md` — 清单替代的是当次截图缺口，不代表真实窗口已捕获验证
+- `docs/验收/visual-diff.md` — 采用Chrome headless静态结构，不是现行桌面运行截图
